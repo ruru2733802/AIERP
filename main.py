@@ -28,8 +28,11 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 @app.on_event("startup")
 async def startup_event():
     print("[Startup] 載入資料庫 Schema ...")
-    schema = get_schema()
-    print(f"[Startup] 共載入 {len(schema)} 個資料表/VIEW")
+    try:
+        schema = get_schema()
+        print(f"[Startup] 共載入 {len(schema)} 個資料表/VIEW")
+    except Exception as e:
+        print(f"[Startup] Schema 載入失敗，稍後可手動更新：{e}")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────

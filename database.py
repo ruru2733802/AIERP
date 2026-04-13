@@ -78,7 +78,7 @@ def load_schema_from_db() -> dict[str, list[dict]]:
                     })
     except Exception as e:
         print(f"[Schema] 連線失敗：{e}")
-        raise RuntimeError(f"資料庫連線失敗：{e}")
+        raise RuntimeError(str(e))
     return schema
 
 
