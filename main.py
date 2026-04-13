@@ -108,8 +108,11 @@ async def export_excel(sql: str):
 @app.post("/api/refresh-schema")
 async def api_refresh_schema():
     """強制重新載入 Schema。"""
-    schema = refresh_schema()
-    return {"message": "Schema 已更新", "tables": len(schema)}
+    try:
+        schema = refresh_schema()
+        return {"message": "Schema 已更新", "tables": len(schema)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
