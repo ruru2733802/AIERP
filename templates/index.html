@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemio ERP 自然語言查詢</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    body { background: #f0f4f8; }
+
+    /* ── 1. 抬頭 ── */
+    .site-header {
+      background: linear-gradient(135deg, #1a3a5c 0%, #2563eb 100%);
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    .site-header h1 { font-size: 1.4rem; margin: 0; font-weight: 700; letter-spacing:.5px; }
+    .site-header .subtitle { font-size: .85rem; opacity: .8; }
+
+    /* ── 2. 輸入框 ── */
+    .query-card { border: none; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+
+    /* ── 3. 結果 ── */
+    #result-section { display: none; }
+    .table-wrapper { max-height: 480px; overflow-y: auto; }
+    .table thead th { position: sticky; top: 0; background: #1a3a5c; color: #fff; white-space: nowrap; }
+    .total-row td { font-weight: 700; background: #dbeafe; }
+    .badge-count { font-size: .75rem; }
+
+    /* ── 4. SQL ── */
+    #sql-section { display: none; }
+    pre.sql-box {
+      background: #1e293b; color: #7dd3fc;
+      padding: 1rem; border-radius: .5rem;
+      font-size: .85rem; white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* ── 5. 可查詢的表 ── */
+    .table-list { column-count: 3; column-gap: 1rem; }
+    .table-list .badge { cursor: pointer; transition: opacity .15s; }
+    .table-list .badge:hover { opacity: .75; }
+
+    /* Loading overlay */
+    #loading-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.45); z-index: 9999;
+      flex-direction: column; align-items: center; justify-content: center;
+      color: #fff; gap: 1rem;
+    }
+    #loading-overlay.show { display: flex; }
+    .spinner-xl { width: 3.5rem; height: 3.5rem; border-width: .35rem; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     區塊 1：抬頭
+══════════════════════════════════════════════════════════ -->
+<header class="site-header">
+  <i class="bi bi-database-fill-gear fs-3"></i>
+  <div>
+    <h1>Gemio ERP 自然語言查詢</h1>
+    <div class="subtitle">輸入繁體中文問題，系統自動轉為 SQL 並查詢資料庫</div>
+  </div>
+  <div class="ms-auto">
+    <button class="btn btn-sm btn-outline-light" onclick="refreshSchema()">
+      <i class="bi bi-arrow-clockwise"></i> 更新 Schema
+    </button>
+  </div>
+</header>
+
+<div class="container-fluid py-3 px-4">
+
+  <!-- ══════════════════════════════════════════════════════
+       區塊 2：輸入框
+  ══════════════════════════════════════════════════════════ -->
+  <div class="card query-card mb-3">
+    <div class="card-body">
+      <label class="form-label fw-semibold"><i class="bi bi-chat-text me-1"></i>請輸入查詢問題（繁體中文）</label>
+      <div class="input-group">
+        <textarea id="nl-input" class="form-control" rows="2"
+          placeholder="例如：列出所有科目餘額 / 顯示最近的採購明細 / 哪些產品採購量超過100"
+          onkeydown="handleEnter(event)"></textarea>
+        <button class="btn btn-primary px-4" onclick="doQuery()">
+          <i class="bi bi-search me-1"></i>查詢
+        </button>
+      </div>
+      <div class="form-text mt-1">按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 也可送出查詢</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       區塊 3：查詢結果
+  ══════════════════════════════════════════════════════════ -->
+  <div id="result-section" class="card mb-3">
+    <div class="card-header d-flex align-items-center gap-2 bg-white">
+      <i class="bi bi-table text-primary fs-5"></i>
+      <span class="fw-semibold">查詢結果</span>
+      <span id="row-count" class="badge bg-secondary badge-count ms-1"></span>
+      <div class="ms-auto">
+        <button class="btn btn-sm btn-success" onclick="exportExcel()">
+          <i class="bi bi-file-earmark-excel me-1"></i>匯出 Excel
+        </button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-wrapper">
+        <table class="table table-bordered table-hover table-sm mb-0" id="result-table">
+          <thead id="result-thead"></thead>
+          <tbody id="result-tbody"></tbody>
+          <tfoot id="result-tfoot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       區塊 4：SQL 語句
+  ══════════════════════════════════════════════════════════ -->
+  <div id="sql-section" class="card mb-3">
+    <div class="card-header d-flex align-items-center gap-2 bg-white">
+      <i class="bi bi-code-slash text-warning fs-5"></i>
+      <span class="fw-semibold">產生的 SQL 語句</span>
+      <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="copySQL()">
+        <i class="bi bi-clipboard me-1"></i>複製
+      </button>
+    </div>
+    <div class="card-body p-2">
+      <pre class="sql-box mb-0" id="sql-display"></pre>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       區塊 5：可查詢的資料表
+  ══════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header d-flex align-items-center gap-2 bg-white">
+      <i class="bi bi-list-ul text-success fs-5"></i>
+      <span class="fw-semibold">可查詢的資料表 / VIEW</span>
+      <span class="badge bg-info text-dark badge-count ms-1">共 {{ tables|length }} 個</span>
+    </div>
+    <div class="card-body py-2">
+      <div class="table-list">
+        {% for t in tables %}
+        <span class="badge bg-light text-dark border me-1 mb-1 px-2 py-1"
+              onclick="insertTable('{{ t }}')" title="點擊插入到查詢框">
+          {{ t }}
+        </span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- Loading Overlay -->
+<div id="loading-overlay">
+  <div class="spinner-border spinner-xl text-light" role="status"></div>
+  <div class="fs-5">系統查詢中，請稍候...</div>
+</div>
+
+<!-- ── JavaScript ─────────────────────────────────────────────── -->
+<script>
+  let lastSQL = "";
+
+  function handleEnter(e) {
+    if (e.ctrlKey && e.key === "Enter") doQuery();
+  }
+
+  async function doQuery() {
+    const query = document.getElementById("nl-input").value.trim();
+    if (!query) { alert("請輸入查詢問題"); return; }
+
+    showLoading(true);
+    hideResults();
+
+    try {
+      const resp = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert("錯誤：" + (data.detail || "未知錯誤"));
+        return;
+      }
+      lastSQL = data.sql;
+      renderResults(data);
+    } catch (err) {
+      alert("連線失敗：" + err.message);
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  function renderResults(data) {
+    const { columns, rows, totals, sql, count } = data;
+
+    // 結果計數
+    document.getElementById("row-count").textContent = `共 ${count} 筆`;
+
+    // 表頭
+    const thead = document.getElementById("result-thead");
+    thead.innerHTML = "<tr>" + columns.map(c => `<th>${c}</th>`).join("") + "</tr>";
+
+    // 資料列
+    const tbody = document.getElementById("result-tbody");
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${columns.length}" class="text-center text-muted">無查詢結果</td></tr>`;
+    } else {
+      tbody.innerHTML = rows.map(row =>
+        "<tr>" + row.map(v => `<td>${v === null ? '<span class="text-muted">NULL</span>' : v}</td>`).join("") + "</tr>"
+      ).join("");
+    }
+
+    // 合計列（有數字欄位才顯示）
+    const tfoot = document.getElementById("result-tfoot");
+    if (Object.keys(totals).length > 0) {
+      const cells = columns.map((c, i) => {
+        if (totals[c] !== undefined) return `<td>${formatNum(totals[c])}</td>`;
+        return i === 0 ? `<td class="text-end fw-bold">合計</td>` : "<td></td>";
+      });
+      tfoot.innerHTML = `<tr class="total-row">${cells.join("")}</tr>`;
+    } else {
+      tfoot.innerHTML = "";
+    }
+
+    // SQL 區塊
+    document.getElementById("sql-display").textContent = sql;
+
+    // 顯示區塊
+    document.getElementById("result-section").style.display = "block";
+    document.getElementById("sql-section").style.display = "block";
+  }
+
+  function formatNum(n) {
+    if (Number.isInteger(n)) return n.toLocaleString();
+    return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  }
+
+  function hideResults() {
+    document.getElementById("result-section").style.display = "none";
+    document.getElementById("sql-section").style.display = "none";
+  }
+
+  function showLoading(show) {
+    document.getElementById("loading-overlay").classList.toggle("show", show);
+  }
+
+  function exportExcel() {
+    if (!lastSQL) { alert("請先執行查詢"); return; }
+    const url = "/api/export-excel?sql=" + encodeURIComponent(lastSQL);
+    window.location.href = url;
+  }
+
+  function copySQL() {
+    const sql = document.getElementById("sql-display").textContent;
+    navigator.clipboard.writeText(sql).then(() => {
+      alert("SQL 已複製到剪貼簿");
+    });
+  }
+
+  function insertTable(name) {
+    const el = document.getElementById("nl-input");
+    el.value += (el.value ? " " : "") + name;
+    el.focus();
+  }
+
+  async function refreshSchema() {
+    if (!confirm("確定要重新載入 Schema？這會連線資料庫重新讀取。")) return;
+    showLoading(true);
+    try {
+      const resp = await fetch("/api/refresh-schema", { method: "POST" });
+      const data = await resp.json();
+      alert(data.message);
+      location.reload();
+    } finally {
+      showLoading(false);
+    }
+  }
+</script>
+</body>
+</html>
