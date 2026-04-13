@@ -282,6 +282,10 @@
     try {
       const resp = await fetch("/api/refresh-schema", { method: "POST" });
       const data = await resp.json();
+      if (!resp.ok) {
+        alert("錯誤：" + (data.detail || JSON.stringify(data)));
+        return;
+      }
       alert(data.message);
       location.reload();
     } finally {
