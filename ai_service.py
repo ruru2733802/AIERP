@@ -50,7 +50,7 @@ async def nl_to_sql(nl_query: str, schema: dict) -> str:
 
 規則：
 1. 只產生 SELECT 陳述式，不得產生 INSERT / UPDATE / DELETE / DROP。
-2. 資料庫為 gemio05，使用 dbo schema。
+2. 資料庫為 gemio，使用 dbo schema。
 3. 只能使用下方列出的資料表或 VIEW。
 4. 欄位名稱請使用 schema 中的原始名稱。
 5. 若需要排序，預設用第一欄 ASC。

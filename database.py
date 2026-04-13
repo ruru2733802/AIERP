@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DB_SERVER   = os.getenv("DB_SERVER",   "163.17.141.61:8000")
-DB_NAME     = os.getenv("DB_NAME",     "gemio05")
+DB_NAME     = os.getenv("DB_NAME",     "gemio")
 DB_USER     = os.getenv("DB_USER",     "drcas")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
